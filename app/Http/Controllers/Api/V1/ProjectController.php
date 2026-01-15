@@ -8,9 +8,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Project;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 class ProjectController extends Controller
 {
+    use AuthorizesRequests;
     /**
      * Display a listing of the projects.
      */
@@ -52,6 +53,7 @@ class ProjectController extends Controller
      */
     public function update(Request $request, Project $project)
     {
+        $this->authorize('update', $project);
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:255', 'unique:projects,name,' . $project->id],
             'description' => ['nullable', 'string'],
@@ -67,7 +69,7 @@ class ProjectController extends Controller
      */
     public function destroy(Project $project)
     {
-        // We might add logic here later to check if the project has tasks
+         $this->authorize('delete', $project);
         $project->delete();
 
         return response()->json(null, 204);

@@ -14,11 +14,19 @@ use Illuminate\Validation\Rule;
 class UserController extends Controller
 {
     /**
-     * Display a listing of the users.
+     * NEW: Get a simple list of all users (id and name only).
+     * This is for populating dropdowns, etc.
+     */
+    public function list()
+    {
+        return User::select('id', 'name')->get();
+    }
+
+    /**
+     * Display a listing of the users for admin management.
      */
     public function index()
     {
-        // Eager load roles to prevent N+1 query problem
         return User::with('roles')->latest()->paginate();
     }
 
@@ -33,7 +41,7 @@ class UserController extends Controller
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'roles' => ['required', 'array'],
-            'roles.*' => ['exists:roles,id'], // Check if each role ID exists
+            'roles.*' => ['exists:roles,id'],
         ]);
 
         $user = User::create([
@@ -87,22 +95,15 @@ class UserController extends Controller
     /**
      * Remove the specified user from storage.
      */
+    public function destroy(User $user)
+    {
+        // Prevent a user from deleting themselves
+        if (Auth::user()->id === $user->id) {
+            return response()->json(['error' => 'You cannot delete your own account.'], 403);
+        }
 
-public function destroy(User $user)
-{
-    // --- TEMPORARY DEBUGGING ---
-    if (!Auth::check()) {
-        return response()->json(['error' => 'The user is NOT authenticated.'], 401);
+        $user->delete();
+
+        return response()->json(null, 204);
     }
-    // --- END DEBUGGING ---
-
-    // Prevent a user from deleting themselves
-    if (Auth::user()->id === $user->id) {
-        return response()->json(['error' => 'You cannot delete your own account.'], 403);
-    }
-
-    $user->delete();
-
-    return response()->json(null, 204);
-}
 }

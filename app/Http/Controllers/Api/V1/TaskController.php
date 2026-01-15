@@ -1,5 +1,5 @@
 <?php
-// In app/Http/Controllers/Api/V1/TaskController.php
+
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
@@ -11,12 +11,17 @@ use Illuminate\Support\Facades\Auth;
 
 class TaskController extends Controller
 {
+    private $relations = [
+        'project:id,name',
+        'status:id,name,color',
+        'priority:id,name,color',
+        'creator:id,name',
+        'assignedUsers:id,name'
+    ];
+
     public function index()
     {
-        // Eager load all relationships for maximum efficiency
-        return Task::with(['project:id,name', 'status:id,name,color', 'priority:id,name,color', 'creator:id,name', 'assignedUsers:id,name'])
-            ->latest()
-            ->paginate();
+        return Task::with($this->relations)->latest()->paginate();
     }
 
     public function store(Request $request)
@@ -31,25 +36,20 @@ class TaskController extends Controller
             'assigned_to.*' => ['exists:users,id'],
         ]);
 
-        $task = Task::create([
-            'name' => $validated['name'],
-            'description' => $validated['description'],
-            'project_id' => $validated['project_id'],
-            'status_id' => $validated['status_id'],
-            'priority_id' => $validated['priority_id'],
-            'created_by' => Auth::id(),
-        ]);
+        // 1. MERGE the authenticated user's ID into the validated data
+        $dataToCreate = array_merge($validated, ['created_by' => Auth::id()]);
 
-        if (!empty($validated['assigned_to'])) {
-            $task->assignedUsers()->sync($validated['assigned_to']);
-        }
+        // 2. CREATE the task using the merged data
+        $task = Task::create($dataToCreate);
 
-        return response()->json($task->load(['project:id,name', 'status:id,name,color', 'priority:id,name,color', 'creator:id,name', 'assignedUsers:id,name']), 201);
+        $task->assignedUsers()->sync($validated['assigned_to'] ?? []);
+
+        return response()->json($task->load($this->relations), 201);
     }
 
     public function show(Task $task)
     {
-        return $task->load(['project:id,name', 'status:id,name,color', 'priority:id,name,color', 'creator:id,name', 'assignedUsers:id,name']);
+        return $task->load($this->relations);
     }
 
     public function update(Request $request, Task $task)
@@ -64,13 +64,14 @@ class TaskController extends Controller
             'assigned_to.*' => ['exists:users,id'],
         ]);
 
-        $task->update($request->except('assigned_to'));
+        // 3. UPDATE the task using the validated data (no created_by needed here)
+        $task->update($validated);
 
         if ($request->has('assigned_to')) {
-            $task->assignedUsers()->sync($validated['assigned_to']);
+            $task->assignedUsers()->sync($validated['assigned_to'] ?? []);
         }
 
-        return response()->json($task->load(['project:id,name', 'status:id,name,color', 'priority:id,name,color', 'creator:id,name', 'assignedUsers:id,name']));
+        return response()->json($task->load($this->relations));
     }
 
     public function destroy(Task $task)
@@ -79,17 +80,11 @@ class TaskController extends Controller
         return response()->json(null, 204);
     }
 
-    /**
-     * Get all available statuses.
-     */
     public function getStatuses()
     {
         return Status::all();
     }
 
-    /**
-     * Get all available priorities.
-     */
     public function getPriorities()
     {
         return Priority::all();

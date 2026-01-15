@@ -23,6 +23,7 @@ class RoleAndPermissionSeeder extends Seeder
 
         // Define all permissions
         $permissions = [
+            ['name' => 'Manage Roles and Permissions', 'slug' => 'manage-roles'],
             // User Permissions
             ['name' => 'Manage All Users', 'slug' => 'manage-users'], // For create, update, delete
             ['name' => 'View Users', 'slug' => 'view-users'],

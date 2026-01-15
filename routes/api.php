@@ -5,9 +5,12 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\TaskController;
+use App\Http\Controllers\Api\V1\RolePermissionController;
+use App\Http\Controllers\Api\V1\ProfileController;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
+// --- Standalone Login Route ---
 Route::post('/login', function (Request $request) {
     $request->validate([
         'email' => 'required|email',
@@ -22,41 +25,54 @@ Route::post('/login', function (Request $request) {
         ]);
     }
 
-    // Give the admin user all permissions, and a regular user none for now
     $permissions = $user->email === 'admin@example.com' ? ['*'] : [];
     $token = $user->createToken('api-token', $permissions)->plainTextToken;
 
     return response()->json(['token' => $token]);
 });
 
-
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user()->load('roles:id,name'); // Also send back user's roles
-});
-
+// --- Main Authenticated API v1 Group ---
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 
-    // --- User Management (Only for users who can 'manage-users') ---
+    // --- Profile Management (For any authenticated user) ---
+    Route::controller(ProfileController::class)->group(function () {
+        Route::get('profile', 'show');
+        Route::post('profile', 'update');
+    });
+
+    // --- NEW: User List for Assignments (For any authenticated user) ---
+    Route::get('users-list', [UserController::class, 'list']);
+
+    // --- Role & Permission Management (Admins Only) ---
+    Route::middleware('can:manage-roles')->controller(RolePermissionController::class)->group(function () {
+        Route::get('roles', 'getRoles');
+        Route::post('roles', 'store');
+        Route::delete('roles/{role}', 'destroy');
+        Route::get('permissions', 'getPermissions');
+        Route::post('roles/assign-permission', 'assignPermissionToRole');
+        Route::post('roles/revoke-permission', 'revokePermissionFromRole');
+    });
+
+    // --- Task Management ---
+    Route::controller(TaskController::class)->group(function () {
+        Route::get('tasks', 'index')->middleware('can:view-tasks');
+        Route::get('tasks/{task}', 'show')->middleware('can:view-tasks');
+        Route::post('tasks', 'store')->middleware('can:manage-tasks');
+        Route::put('tasks/{task}', 'update')->middleware('can:manage-tasks');
+        Route::patch('tasks/{task}', 'update')->middleware('can:manage-tasks');
+        Route::delete('tasks/{task}', 'destroy')->middleware('can:manage-tasks');
+        Route::get('statuses', 'getStatuses')->middleware('can:view-tasks');
+        Route::get('priorities', 'getPriorities')->middleware('can:view-tasks');
+    });
+
+    // --- Full User Management (Admins Only) ---
     Route::apiResource('users', UserController::class)->middleware('can:manage-users');
 
     // --- Project Management ---
     Route::apiResource('projects', ProjectController::class)->middleware('can:manage-projects');
 
-    // --- Task Management ---
-    // Use a controller group for tasks
-    Route::controller(TaskController::class)->group(function () {
-        // Anyone who can 'view-tasks' can see the list and individual tasks
-        Route::get('tasks', 'index')->middleware('can:view-tasks');
-        Route::get('tasks/{task}', 'show')->middleware('can:view-tasks');
-
-        // Only users who can 'manage-tasks' can create, update, or delete
-        Route::post('tasks', 'store')->middleware('can:manage-tasks');
-        Route::put('tasks/{task}', 'update')->middleware('can:manage-tasks');
-        Route::patch('tasks/{task}', 'update')->middleware('can:manage-tasks');
-        Route::delete('tasks/{task}', 'destroy')->middleware('can:manage-tasks');
-
-        // Anyone who can 'view-tasks' can see available statuses and priorities
-        Route::get('statuses', 'getStatuses')->middleware('can:view-tasks');
-        Route::get('priorities', 'getPriorities')->middleware('can:view-tasks');
+    // GET CURRENT USER (can go anywhere in the group)
+    Route::get('/user', function (Request $request) {
+        return $request->user()->load('roles:id,name');
     });
 });

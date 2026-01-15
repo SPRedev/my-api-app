@@ -3,7 +3,7 @@
 
 namespace App\Models;
 
-// ... other use statements
+use Illuminate\Database\Eloquent\Casts\Attribute; // 1. IMPORT Attribute class
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -16,8 +16,6 @@ class User extends Authenticatable
 
     /**
      * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
      */
     protected $fillable = [
         'name',
@@ -27,6 +25,13 @@ class User extends Authenticatable
         'is_active',
     ];
 
+    /**
+     * The attributes that should be appended to the model's array form.
+     *
+     * @var array
+     */
+    protected $appends = ['is_admin']; // 2. APPEND the new attribute
+
     // ... other properties
 
     /**
@@ -35,5 +40,26 @@ class User extends Authenticatable
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class);
+    }
+
+    /**
+     * The tasks that are assigned to the user.
+     */
+    public function assignedTasks(): BelongsToMany
+    {
+        return $this->belongsToMany(Task::class, 'task_user');
+    }
+
+    /**
+     * 3. NEW: Determine if the user is an administrator.
+     *
+     * This is an "Attribute Accessor". It creates a virtual `is_admin` property
+     * on the User model.
+     */
+    protected function isAdmin(): Attribute
+    {
+        return Attribute::make(
+            get: fn () => $this->roles()->where('slug', 'admin')->exists(),
+        );
     }
 }
