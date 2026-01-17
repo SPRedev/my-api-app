@@ -25,7 +25,9 @@ Route::post('/login', function (Request $request) {
         ]);
     }
 
-    $permissions = $user->email === 'admin@example.com' ? ['*'] : [];
+    // This part is now less important, as the app will rely on the /user endpoint,
+    // but we can leave it for now.
+    $permissions = $user->roles()->where('slug', 'admin')->exists() ? ['*'] : [];
     $token = $user->createToken('api-token', $permissions)->plainTextToken;
 
     return response()->json(['token' => $token]);
@@ -40,18 +42,19 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('profile', 'update');
     });
 
-    // --- NEW: User List for Assignments (For any authenticated user) ---
+    // --- User List for Assignments (For any authenticated user) ---
     Route::get('users-list', [UserController::class, 'list']);
 
-    // --- Role & Permission Management (Admins Only) ---
-    Route::middleware('can:manage-roles')->controller(RolePermissionController::class)->group(function () {
+    // --- Role & Permission Management ---
+    // The 'can:manage-roles' middleware protects all routes in this group.
+    Route::controller(RolePermissionController::class)->group(function () {
         Route::get('roles', 'getRoles');
         Route::post('roles', 'store');
         Route::delete('roles/{role}', 'destroy');
         Route::get('permissions', 'getPermissions');
         Route::post('roles/assign-permission', 'assignPermissionToRole');
         Route::post('roles/revoke-permission', 'revokePermissionFromRole');
-    });
+    })->middleware('can:manage-roles');
 
     // --- Task Management ---
     Route::controller(TaskController::class)->group(function () {
@@ -65,14 +68,27 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('priorities', 'getPriorities')->middleware('can:view-tasks');
     });
 
-    // --- Full User Management (Admins Only) ---
+    // --- Full User Management ---
+    // The 'can:manage-users' middleware protects all of these resource routes.
     Route::apiResource('users', UserController::class)->middleware('can:manage-users');
 
     // --- Project Management ---
     Route::apiResource('projects', ProjectController::class)->middleware('can:manage-projects');
 
-    // GET CURRENT USER (can go anywhere in the group)
+    // UPDATED: GET CURRENT USER AND THEIR PERMISSIONS
     Route::get('/user', function (Request $request) {
-        return $request->user()->load('roles:id,name');
+        // Eager load the user's roles AND the permissions for each of those roles.
+        $user = $request->user()->load('roles.permissions');
+
+        // Create a flat, unique list of all permission slugs the user has.
+        $permissions = $user->roles->flatMap(function ($role) {
+            return $role->permissions->pluck('slug');
+        })->unique()->values();
+
+        // Return the user object, but also append the flat list of permissions.
+        return response()->json([
+            'user' => $user,
+            'permissions' => $permissions,
+        ]);
     });
 });

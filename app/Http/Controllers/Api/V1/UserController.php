@@ -1,11 +1,11 @@
 <?php
-// In app/Http/Controllers/Api/V1/UserController.php
 
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Role;
+use Illuminate\Database\QueryException; // 1. IMPORT QueryException
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -13,26 +13,16 @@ use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    /**
-     * NEW: Get a simple list of all users (id and name only).
-     * This is for populating dropdowns, etc.
-     */
     public function list()
     {
         return User::select('id', 'name')->get();
     }
 
-    /**
-     * Display a listing of the users for admin management.
-     */
     public function index()
     {
         return User::with('roles')->latest()->paginate();
     }
 
-    /**
-     * Store a newly created user in storage.
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -56,17 +46,11 @@ class UserController extends Controller
         return response()->json($user->load('roles'), 201);
     }
 
-    /**
-     * Display the specified user.
-     */
     public function show(User $user)
     {
         return $user->load('roles');
     }
 
-    /**
-     * Update the specified user in storage.
-     */
     public function update(Request $request, User $user)
     {
         $validated = $request->validate([
@@ -97,13 +81,26 @@ class UserController extends Controller
      */
     public function destroy(User $user)
     {
-        // Prevent a user from deleting themselves
         if (Auth::user()->id === $user->id) {
             return response()->json(['error' => 'You cannot delete your own account.'], 403);
         }
 
-        $user->delete();
+        // 2. WRAP the delete call in a try-catch block
+        try {
+            $user->delete();
+            return response()->json(null, 204); // Success
+        } catch (QueryException $e) {
+            // 3. CATCH the specific database error
+            // Check for a foreign key constraint violation (error code 1451 for MySQL)
+            if ($e->errorInfo[1] == 1451) {
+                // 4. RETURN a user-friendly 409 Conflict error
+                return response()->json([
+                    'error' => 'Cannot delete user. They are the creator of one or more tasks. Please reassign those tasks first.'
+                ], 409); // 409 Conflict is the appropriate status code
+            }
 
-        return response()->json(null, 204);
+            // For any other database error, return a generic 500 error
+            return response()->json(['error' => 'A database error occurred.'], 500);
+        }
     }
 }
