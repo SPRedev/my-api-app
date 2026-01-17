@@ -7,6 +7,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Str; // 1. IMPORT THE STR CLASS
 
 class RolePermissionController extends Controller
 {
@@ -29,31 +30,20 @@ class RolePermissionController extends Controller
     }
 
     /**
-     * Assign a specific permission to a role.
+     * Create a new role.
      */
-    public function assignPermissionToRole(Request $request)
-    {
-        $validated = $request->validate([
-            'role_id' => 'required|exists:roles,id',
-            'permission_id' => 'required|exists:permissions,id',
-        ]);
-
-        $role = Role::find($validated['role_id']);
-
-        // The only change is on the next line:
-        $role->permissions()->syncWithoutDetaching($validated['permission_id']);
-
-        $permission = Permission::find($validated['permission_id']); // We still need this for the message
-        return response()->json(['message' => "Permission '{$permission->name}' assigned to role '{$role->name}'."]);
-    }
     public function store(Request $request)
     {
+        // 2. ONLY validate the name. The slug will be generated automatically.
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:roles,name',
-            'slug' => 'required|string|max:255|unique:roles,slug',
         ]);
 
-        $role = Role::create($validated);
+        // 3. Create the role using the validated name and a generated slug.
+        $role = Role::create([
+            'name' => $validated['name'],
+            'slug' => Str::slug($validated['name']), // e.g., "New Role" -> "new-role"
+        ]);
 
         return response()->json($role, 201); // Return the newly created role
     }
@@ -74,6 +64,23 @@ class RolePermissionController extends Controller
     }
 
     /**
+     * Assign a specific permission to a role.
+     */
+    public function assignPermissionToRole(Request $request)
+    {
+        $validated = $request->validate([
+            'role_id' => 'required|exists:roles,id',
+            'permission_id' => 'required|exists:permissions,id',
+        ]);
+
+        $role = Role::find($validated['role_id']);
+        $role->permissions()->syncWithoutDetaching($validated['permission_id']);
+
+        $permission = Permission::find($validated['permission_id']);
+        return response()->json(['message' => "Permission '{$permission->name}' assigned to role '{$role->name}'."]);
+    }
+
+    /**
      * Revoke a specific permission from a role.
      */
     public function revokePermissionFromRole(Request $request)
@@ -86,7 +93,6 @@ class RolePermissionController extends Controller
         $role = Role::find($validated['role_id']);
         $permission = Permission::find($validated['permission_id']);
 
-        // Use detach() to remove the permission.
         $role->permissions()->detach($permission);
 
         return response()->json(['message' => "Permission '{$permission->name}' revoked from role '{$role->name}'."]);
